@@ -115,7 +115,6 @@ public:
 		}
 	};
 
-private:
 	class Waypoint {
 	public:
 		frc::Translation2d anchorPoint;
@@ -143,7 +142,8 @@ private:
 			this->stopEvent = stopEvent;
 		}
 	};
-
+	
+private:
 	std::vector<PathPlannerState> states;
 	std::vector<EventMarker> markers;
 	StopEvent startStopEvent;
