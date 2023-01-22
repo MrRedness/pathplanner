@@ -5,33 +5,54 @@ import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.trajectory.Trajectory;
+import edu.wpi.first.wpilibj.DriverStation;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
 public class PathPlannerTrajectory extends Trajectory {
+  private static final double FIELD_WIDTH_METERS = 8.02;
+
   private final List<EventMarker> markers;
   private final StopEvent startStopEvent;
   private final StopEvent endStopEvent;
+  public final boolean fromGUI;
 
   public PathPlannerTrajectory() {
     super();
     this.markers = new ArrayList<>();
     this.startStopEvent = new StopEvent();
     this.endStopEvent = new StopEvent();
+    this.fromGUI = false;
   }
 
   protected PathPlannerTrajectory(
-      ArrayList<Waypoint> pathPoints,
-      ArrayList<EventMarker> markers,
+      List<Waypoint> pathPoints,
+      List<EventMarker> markers,
       PathConstraints constraints,
-      boolean reversed) {
+      boolean reversed,
+      boolean fromGUI) {
     super(generatePath(pathPoints, constraints.maxVelocity, constraints.maxAcceleration, reversed));
 
     this.markers = markers;
     this.calculateMarkerTimes(pathPoints);
     this.startStopEvent = pathPoints.get(0).stopEvent;
     this.endStopEvent = pathPoints.get(pathPoints.size() - 1).stopEvent;
+    this.fromGUI = fromGUI;
+  }
+
+  private PathPlannerTrajectory(
+      List<State> states,
+      List<EventMarker> markers,
+      StopEvent startStopEvent,
+      StopEvent endStopEvent,
+      boolean fromGUI) {
+    super(states);
+
+    this.markers = markers;
+    this.startStopEvent = startStopEvent;
+    this.endStopEvent = endStopEvent;
+    this.fromGUI = fromGUI;
   }
 
   /**
@@ -93,6 +114,56 @@ public class PathPlannerTrajectory extends Trajectory {
         sample, (time - prevSample.timeSeconds) / (sample.timeSeconds - prevSample.timeSeconds));
   }
 
+  public static PathPlannerState transformStateForAlliance(
+      PathPlannerState state, DriverStation.Alliance alliance) {
+    if (alliance == DriverStation.Alliance.Red) {
+      // Create a new state so that we don't overwrite the original
+      PathPlannerState transformedState = new PathPlannerState();
+
+      Translation2d transformedTranslation =
+          new Translation2d(state.poseMeters.getX(), FIELD_WIDTH_METERS - state.poseMeters.getY());
+      Rotation2d transformedHeading = state.poseMeters.getRotation().times(-1);
+      Rotation2d transformedHolonomicRotation = state.holonomicRotation.times(-1);
+
+      transformedState.timeSeconds = state.timeSeconds;
+      transformedState.velocityMetersPerSecond = state.velocityMetersPerSecond;
+      transformedState.accelerationMetersPerSecondSq = state.accelerationMetersPerSecondSq;
+      transformedState.poseMeters = new Pose2d(transformedTranslation, transformedHeading);
+      transformedState.angularVelocityRadPerSec = -state.angularVelocityRadPerSec;
+      transformedState.holonomicRotation = transformedHolonomicRotation;
+      transformedState.holonomicAngularVelocityRadPerSec = -state.holonomicAngularVelocityRadPerSec;
+      transformedState.curveRadius = -state.curveRadius;
+      transformedState.curvatureRadPerMeter = -state.curvatureRadPerMeter;
+      transformedState.deltaPos = state.deltaPos;
+
+      return transformedState;
+    } else {
+      return state;
+    }
+  }
+
+  public static PathPlannerTrajectory transformTrajectoryForAlliance(
+      PathPlannerTrajectory trajectory, DriverStation.Alliance alliance) {
+    if (alliance == DriverStation.Alliance.Red) {
+      List<State> transformedStates = new ArrayList<>();
+
+      for (State s : trajectory.getStates()) {
+        PathPlannerState state = (PathPlannerState) s;
+
+        transformedStates.add(transformStateForAlliance(state, alliance));
+      }
+
+      return new PathPlannerTrajectory(
+          transformedStates,
+          trajectory.markers,
+          trajectory.startStopEvent,
+          trajectory.endStopEvent,
+          trajectory.fromGUI);
+    } else {
+      return trajectory;
+    }
+  }
+
   /**
    * Get the initial state of the path
    *
@@ -131,9 +202,9 @@ public class PathPlannerTrajectory extends Trajectory {
   }
 
   private static List<State> generatePath(
-      ArrayList<Waypoint> pathPoints, double maxVel, double maxAccel, boolean reversed) {
-    ArrayList<ArrayList<Waypoint>> splitPaths = new ArrayList<>();
-    ArrayList<Waypoint> currentPath = new ArrayList<>();
+      List<Waypoint> pathPoints, double maxVel, double maxAccel, boolean reversed) {
+    List<List<Waypoint>> splitPaths = new ArrayList<>();
+    List<Waypoint> currentPath = new ArrayList<>();
 
     for (int i = 0; i < pathPoints.size(); i++) {
       Waypoint w = pathPoints.get(i);
@@ -147,19 +218,18 @@ public class PathPlannerTrajectory extends Trajectory {
       }
     }
 
-    ArrayList<ArrayList<PathPlannerState>> splitStates = new ArrayList<>();
+    List<List<PathPlannerState>> splitStates = new ArrayList<>();
     boolean shouldReverse = reversed;
-    for (int i = 0; i < splitPaths.size(); i++) {
-      ArrayList<PathPlannerState> joined =
-          joinSplines(splitPaths.get(i), maxVel, PathPlanner.resolution);
+    for (List<Waypoint> splitPath : splitPaths) {
+      List<PathPlannerState> joined = joinSplines(splitPath, maxVel, PathPlanner.resolution);
       calculateMaxVel(joined, maxVel, maxAccel, shouldReverse);
-      calculateVelocity(joined, splitPaths.get(i), maxAccel);
+      calculateVelocity(joined, splitPath, maxAccel);
       recalculateValues(joined, shouldReverse);
       splitStates.add(joined);
       shouldReverse = !shouldReverse;
     }
 
-    ArrayList<Trajectory.State> joinedStates = new ArrayList<>();
+    List<Trajectory.State> joinedStates = new ArrayList<>();
 
     for (int i = 0; i < splitStates.size(); i++) {
       if (i != 0) {
@@ -207,7 +277,7 @@ public class PathPlannerTrajectory extends Trajectory {
   }
 
   private static void calculateVelocity(
-      List<PathPlannerState> states, ArrayList<Waypoint> pathPoints, double maxAccel) {
+      List<PathPlannerState> states, List<Waypoint> pathPoints, double maxAccel) {
     if (pathPoints.get(0).velOverride == -1) {
       states.get(0).velocityMetersPerSecond = 0;
     }
@@ -299,9 +369,9 @@ public class PathPlannerTrajectory extends Trajectory {
     }
   }
 
-  private static ArrayList<PathPlannerState> joinSplines(
-      ArrayList<Waypoint> pathPoints, double maxVel, double step) {
-    ArrayList<PathPlannerState> states = new ArrayList<>();
+  private static List<PathPlannerState> joinSplines(
+      List<Waypoint> pathPoints, double maxVel, double step) {
+    List<PathPlannerState> states = new ArrayList<>();
     int numSplines = pathPoints.size() - 1;
 
     for (int i = 0; i < numSplines; i++) {
@@ -415,7 +485,7 @@ public class PathPlannerTrajectory extends Trajectory {
   }
 
   /** Assumes states have already been generated and the markers list has been populated */
-  private void calculateMarkerTimes(ArrayList<Waypoint> waypoints) {
+  private void calculateMarkerTimes(List<Waypoint> waypoints) {
     for (EventMarker marker : this.markers) {
       int startIndex = (int) marker.waypointRelativePos;
       double t = marker.waypointRelativePos % 1;
@@ -533,17 +603,17 @@ public class PathPlannerTrajectory extends Trajectory {
   }
 
   public static class EventMarker {
-    public ArrayList<String> names;
+    public List<String> names;
     public double timeSeconds;
     public Translation2d positionMeters;
     protected double waypointRelativePos;
 
-    protected EventMarker(ArrayList<String> names, double waypointRelativePos) {
+    protected EventMarker(List<String> names, double waypointRelativePos) {
       this.names = names;
       this.waypointRelativePos = waypointRelativePos;
     }
 
-    public static EventMarker fromTime(ArrayList<String> names, double timeSeconds) {
+    public static EventMarker fromTime(List<String> names, double timeSeconds) {
       EventMarker m = new EventMarker(names, 0);
       m.timeSeconds = timeSeconds;
 
@@ -606,13 +676,13 @@ public class PathPlannerTrajectory extends Trajectory {
       }
     }
 
-    public final ArrayList<String> names;
+    public final List<String> names;
     public final ExecutionBehavior executionBehavior;
     public final WaitBehavior waitBehavior;
     public final double waitTime;
 
     public StopEvent(
-        ArrayList<String> names,
+        List<String> names,
         ExecutionBehavior executionBehavior,
         WaitBehavior waitBehavior,
         double waitTime) {

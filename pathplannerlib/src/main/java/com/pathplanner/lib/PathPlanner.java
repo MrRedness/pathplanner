@@ -8,6 +8,7 @@ import edu.wpi.first.wpilibj.Filesystem;
 import java.io.*;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
@@ -38,10 +39,10 @@ public class PathPlanner {
       String fileContent = fileContentBuilder.toString();
       JSONObject json = (JSONObject) new JSONParser().parse(fileContent);
 
-      ArrayList<Waypoint> waypoints = getWaypointsFromJson(json);
-      ArrayList<EventMarker> markers = getMarkersFromJson(json);
+      List<Waypoint> waypoints = getWaypointsFromJson(json);
+      List<EventMarker> markers = getMarkersFromJson(json);
 
-      return new PathPlannerTrajectory(waypoints, markers, constraints, reversed);
+      return new PathPlannerTrajectory(waypoints, markers, constraints, reversed, true);
     } catch (Exception e) {
       e.printStackTrace();
       return null;
@@ -96,11 +97,11 @@ public class PathPlanner {
    * @param constraints The PathConstraints (max velocity, max acceleration) of the remaining paths
    *     in the group. If there are less constraints than paths, the last constrain given will be
    *     used for the remaining paths.
-   * @return An ArrayList of all generated paths in the group
+   * @return A List of all generated paths in the group
    */
-  public static ArrayList<PathPlannerTrajectory> loadPathGroup(
+  public static List<PathPlannerTrajectory> loadPathGroup(
       String name, boolean reversed, PathConstraints constraint, PathConstraints... constraints) {
-    ArrayList<PathConstraints> allConstraints = new ArrayList<>();
+    List<PathConstraints> allConstraints = new ArrayList<>();
     allConstraints.add(constraint);
     allConstraints.addAll(Arrays.asList(constraints));
 
@@ -117,20 +118,20 @@ public class PathPlanner {
       String fileContent = fileContentBuilder.toString();
       JSONObject json = (JSONObject) new JSONParser().parse(fileContent);
 
-      ArrayList<Waypoint> waypoints = getWaypointsFromJson(json);
-      ArrayList<EventMarker> markers = getMarkersFromJson(json);
+      List<Waypoint> waypoints = getWaypointsFromJson(json);
+      List<EventMarker> markers = getMarkersFromJson(json);
 
-      ArrayList<ArrayList<Waypoint>> splitWaypoints = new ArrayList<>();
-      ArrayList<ArrayList<EventMarker>> splitMarkers = new ArrayList<>();
+      List<List<Waypoint>> splitWaypoints = new ArrayList<>();
+      List<List<EventMarker>> splitMarkers = new ArrayList<>();
 
-      ArrayList<Waypoint> currentPath = new ArrayList<>();
+      List<Waypoint> currentPath = new ArrayList<>();
       for (int i = 0; i < waypoints.size(); i++) {
         Waypoint w = waypoints.get(i);
 
         currentPath.add(w);
         if (w.isStopPoint || i == waypoints.size() - 1) {
           // Get the markers that should be part of this path and correct their positions
-          ArrayList<EventMarker> currentMarkers = new ArrayList<>();
+          List<EventMarker> currentMarkers = new ArrayList<>();
           for (EventMarker marker : markers) {
             if (marker.waypointRelativePos >= waypoints.indexOf(currentPath.get(0))
                 && marker.waypointRelativePos <= i) {
@@ -153,7 +154,7 @@ public class PathPlanner {
             "Size of splitWaypoints does not match splitMarkers. Something went very wrong");
       }
 
-      ArrayList<PathPlannerTrajectory> pathGroup = new ArrayList<>();
+      List<PathPlannerTrajectory> pathGroup = new ArrayList<>();
       boolean shouldReverse = reversed;
       for (int i = 0; i < splitWaypoints.size(); i++) {
         PathConstraints currentConstraints;
@@ -165,7 +166,11 @@ public class PathPlanner {
 
         pathGroup.add(
             new PathPlannerTrajectory(
-                splitWaypoints.get(i), splitMarkers.get(i), currentConstraints, shouldReverse));
+                splitWaypoints.get(i),
+                splitMarkers.get(i),
+                currentConstraints,
+                shouldReverse,
+                true));
 
         // Loop through waypoints and invert shouldReverse for every reversal point.
         // This makes sure that other paths in the group are properly reversed.
@@ -193,9 +198,9 @@ public class PathPlanner {
    * @param constraints The PathConstraints (max velocity, max acceleration) of the remaining paths
    *     in the group. If there are less constraints than paths, the last constrain given will be
    *     used for the remaining paths.
-   * @return An ArrayList of all generated paths in the group
+   * @return A List of all generated paths in the group
    */
-  public static ArrayList<PathPlannerTrajectory> loadPathGroup(
+  public static List<PathPlannerTrajectory> loadPathGroup(
       String name, PathConstraints constraint, PathConstraints... constraints) {
     return loadPathGroup(name, false, constraint, constraints);
   }
@@ -208,9 +213,9 @@ public class PathPlanner {
    * @param maxVel The max velocity of every path in the group
    * @param maxAccel The max acceleraiton of every path in the group
    * @param reversed Should the robot follow this path group reversed
-   * @return An ArrayList of all generated paths in the group
+   * @return A List of all generated paths in the group
    */
-  public static ArrayList<PathPlannerTrajectory> loadPathGroup(
+  public static List<PathPlannerTrajectory> loadPathGroup(
       String name, double maxVel, double maxAccel, boolean reversed) {
     return loadPathGroup(name, reversed, new PathConstraints(maxVel, maxAccel));
   }
@@ -222,11 +227,131 @@ public class PathPlanner {
    * @param name The name of the path group to load
    * @param maxVel The max velocity of every path in the group
    * @param maxAccel The max acceleraiton of every path in the group
-   * @return An ArrayList of all generated paths in the group
+   * @return A List of all generated paths in the group
    */
-  public static ArrayList<PathPlannerTrajectory> loadPathGroup(
+  public static List<PathPlannerTrajectory> loadPathGroup(
       String name, double maxVel, double maxAccel) {
     return loadPathGroup(name, false, new PathConstraints(maxVel, maxAccel));
+  }
+
+  /**
+   * Generate a path on-the-fly from a list of points As you can't see the path in the GUI when
+   * using this method, make sure you have a good idea of what works well and what doesn't before
+   * you use this method in competition. Points positioned in weird configurations such as being too
+   * close together can lead to really janky paths.
+   *
+   * @param constraints The max velocity and max acceleration of the path
+   * @param reversed Should the robot follow this path reversed
+   * @param points Points in the path
+   * @return The generated path
+   */
+  public static PathPlannerTrajectory generatePath(
+      PathConstraints constraints, boolean reversed, List<PathPoint> points) {
+    if (points.size() < 2) {
+      throw new IllegalArgumentException(
+          "Error generating trajectory.  List of points in trajectory must have at least two points.");
+    }
+
+    PathPoint firstPoint = points.get(0);
+
+    List<Waypoint> waypoints = new ArrayList<>();
+    waypoints.add(
+        new Waypoint(
+            firstPoint.position,
+            null,
+            null,
+            firstPoint.velocityOverride,
+            firstPoint.holonomicRotation,
+            false,
+            false,
+            new PathPlannerTrajectory.StopEvent()));
+
+    for (int i = 1; i < points.size(); i++) {
+      PathPoint p1 = points.get(i - 1);
+      PathPoint p2 = points.get(i);
+
+      double thirdDistance = p1.position.getDistance(p2.position) / 3.0;
+
+      double p1NextDistance = p1.nextControlLength <= 0 ? thirdDistance : p1.nextControlLength;
+      double p2PrevDistance = p2.prevControlLength <= 0 ? thirdDistance : p2.prevControlLength;
+
+      Translation2d p1Next =
+          p1.position.plus(
+              new Translation2d(
+                  p1.heading.getCos() * p1NextDistance, p1.heading.getSin() * p1NextDistance));
+      waypoints.get(i - 1).nextControl = p1Next;
+
+      Translation2d p2Prev =
+          p2.position.minus(
+              new Translation2d(
+                  p2.heading.getCos() * p2PrevDistance, p2.heading.getSin() * p2PrevDistance));
+      waypoints.add(
+          new Waypoint(
+              p2.position,
+              p2Prev,
+              null,
+              p2.velocityOverride,
+              p2.holonomicRotation,
+              false,
+              false,
+              new PathPlannerTrajectory.StopEvent()));
+    }
+
+    return new PathPlannerTrajectory(waypoints, new ArrayList<>(), constraints, reversed, false);
+  }
+
+  /**
+   * Generate a path on-the-fly from a list of points As you can't see the path in the GUI when
+   * using this method, make sure you have a good idea of what works well and what doesn't before
+   * you use this method in competition. Points positioned in weird configurations such as being too
+   * close together can lead to really janky paths.
+   *
+   * @param maxVel The max velocity of the path
+   * @param maxAccel The max acceleration of the path
+   * @param reversed Should the robot follow this path reversed
+   * @param points Points in the path
+   * @return The generated path
+   * @deprecated For removal in 2024, use {@link PathPlanner#generatePath(PathConstraints, boolean,
+   *     List)} instead
+   */
+  @Deprecated
+  public static PathPlannerTrajectory generatePath(
+      double maxVel, double maxAccel, boolean reversed, List<PathPoint> points) {
+    return generatePath(new PathConstraints(maxVel, maxAccel), reversed, points);
+  }
+
+  /**
+   * Generate a path on-the-fly from a list of points As you can't see the path in the GUI when
+   * using this method, make sure you have a good idea of what works well and what doesn't before
+   * you use this method in competition. Points positioned in weird configurations such as being too
+   * close together can lead to really janky paths.
+   *
+   * @param constraints The max velocity and max acceleration of the path
+   * @param points Points in the path
+   * @return The generated path
+   */
+  public static PathPlannerTrajectory generatePath(
+      PathConstraints constraints, List<PathPoint> points) {
+    return generatePath(constraints, false, points);
+  }
+
+  /**
+   * Generate a path on-the-fly from a list of points As you can't see the path in the GUI when
+   * using this method, make sure you have a good idea of what works well and what doesn't before
+   * you use this method in competition. Points positioned in weird configurations such as being too
+   * close together can lead to really janky paths.
+   *
+   * @param maxVel The max velocity of the path
+   * @param maxAccel The max acceleration of the path
+   * @param points Points in the path
+   * @return The generated path
+   * @deprecated For removal in 2024, use {@link PathPlanner#generatePath(PathConstraints, List)}
+   *     instead
+   */
+  @Deprecated
+  public static PathPlannerTrajectory generatePath(
+      double maxVel, double maxAccel, List<PathPoint> points) {
+    return generatePath(new PathConstraints(maxVel, maxAccel), false, points);
   }
 
   /**
@@ -248,76 +373,11 @@ public class PathPlanner {
       PathPoint point1,
       PathPoint point2,
       PathPoint... points) {
-    ArrayList<PathPoint> allPoints = new ArrayList<>();
-    allPoints.add(point1);
-    allPoints.add(point2);
-    allPoints.addAll(Arrays.asList(points));
-
-    ArrayList<Waypoint> waypoints = new ArrayList<>();
-    waypoints.add(
-        new Waypoint(
-            point1.position,
-            null,
-            null,
-            point1.velocityOverride,
-            point1.holonomicRotation,
-            false,
-            false,
-            new PathPlannerTrajectory.StopEvent()));
-
-    for (int i = 1; i < allPoints.size(); i++) {
-      PathPoint p1 = allPoints.get(i - 1);
-      PathPoint p2 = allPoints.get(i);
-
-      double thirdDistance = p1.position.getDistance(p2.position) / 3.0;
-
-      Translation2d p1Next =
-          p1.position.plus(
-              new Translation2d(
-                  p1.heading.getCos() * thirdDistance, p1.heading.getSin() * thirdDistance));
-      waypoints.get(i - 1).nextControl = p1Next;
-
-      Translation2d p2Prev =
-          p2.position.minus(
-              new Translation2d(
-                  p2.heading.getCos() * thirdDistance, p2.heading.getSin() * thirdDistance));
-      waypoints.add(
-          new Waypoint(
-              p2.position,
-              p2Prev,
-              null,
-              p2.velocityOverride,
-              p2.holonomicRotation,
-              false,
-              false,
-              new PathPlannerTrajectory.StopEvent()));
-    }
-
-    return new PathPlannerTrajectory(waypoints, new ArrayList<>(), constraints, reversed);
-  }
-
-  /**
-   * Generate a path on-the-fly from a list of points As you can't see the path in the GUI when
-   * using this method, make sure you have a good idea of what works well and what doesn't before
-   * you use this method in competition. Points positioned in weird configurations such as being too
-   * close together can lead to really janky paths.
-   *
-   * @param maxVel The max velocity of the path
-   * @param maxAccel The max acceleration of the path
-   * @param reversed Should the robot follow this path reversed
-   * @param point1 First point in the path
-   * @param point2 Second point in the path
-   * @param points Remaining points in the path
-   * @return The generated path
-   */
-  public static PathPlannerTrajectory generatePath(
-      double maxVel,
-      double maxAccel,
-      boolean reversed,
-      PathPoint point1,
-      PathPoint point2,
-      PathPoint... points) {
-    return generatePath(new PathConstraints(maxVel, maxAccel), reversed, point1, point2, points);
+    List<PathPoint> pointsList = new ArrayList<>();
+    pointsList.add(point1);
+    pointsList.add(point2);
+    pointsList.addAll(List.of(points));
+    return generatePath(constraints, reversed, pointsList);
   }
 
   /**
@@ -349,10 +409,13 @@ public class PathPlanner {
    * @param point2 Second point in the path
    * @param points Remaining points in the path
    * @return The generated path
+   * @deprecated For removal in 2024, use {@link PathPlanner#generatePath(PathConstraints,
+   *     PathPoint, PathPoint, PathPoint...)} instead.
    */
+  @Deprecated
   public static PathPlannerTrajectory generatePath(
       double maxVel, double maxAccel, PathPoint point1, PathPoint point2, PathPoint... points) {
-    return generatePath(new PathConstraints(maxVel, maxAccel), false, point1, point2, points);
+    return generatePath(new PathConstraints(maxVel, maxAccel), point1, point2, points);
   }
 
   /**
@@ -391,10 +454,10 @@ public class PathPlanner {
     }
   }
 
-  private static ArrayList<Waypoint> getWaypointsFromJson(JSONObject json) {
+  private static List<Waypoint> getWaypointsFromJson(JSONObject json) {
     JSONArray jsonWaypoints = (JSONArray) json.get("waypoints");
 
-    ArrayList<Waypoint> waypoints = new ArrayList<>();
+    List<Waypoint> waypoints = new ArrayList<>();
 
     for (Object waypoint : jsonWaypoints) {
       JSONObject jsonWaypoint = (JSONObject) waypoint;
@@ -439,7 +502,7 @@ public class PathPlanner {
 
       PathPlannerTrajectory.StopEvent stopEvent = new PathPlannerTrajectory.StopEvent();
       if (jsonWaypoint.get("stopEvent") != null) {
-        ArrayList<String> names = new ArrayList<>();
+        List<String> names = new ArrayList<>();
         PathPlannerTrajectory.StopEvent.ExecutionBehavior executionBehavior =
             PathPlannerTrajectory.StopEvent.ExecutionBehavior.PARALLEL;
         PathPlannerTrajectory.StopEvent.WaitBehavior waitBehavior =
@@ -494,17 +557,17 @@ public class PathPlanner {
     return waypoints;
   }
 
-  private static ArrayList<EventMarker> getMarkersFromJson(JSONObject json) {
+  private static List<EventMarker> getMarkersFromJson(JSONObject json) {
     JSONArray jsonMarkers = (JSONArray) json.get("markers");
 
-    ArrayList<EventMarker> markers = new ArrayList<>();
+    List<EventMarker> markers = new ArrayList<>();
 
     if (jsonMarkers != null) {
       for (Object marker : jsonMarkers) {
         JSONObject jsonMarker = (JSONObject) marker;
 
         JSONArray eventNames = (JSONArray) jsonMarker.get("names");
-        ArrayList<String> names = new ArrayList<>();
+        List<String> names = new ArrayList<>();
         if (eventNames != null) {
           for (Object eventName : eventNames) {
             names.add((String) eventName);

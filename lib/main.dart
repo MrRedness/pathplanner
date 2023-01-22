@@ -40,8 +40,6 @@ void main() async {
 
       runApp(PathPlanner(
         appVersion: packageInfo.version,
-        appStoreBuild: packageInfo.installerStore !=
-            null, // This will only be true if installed from apple app store
       ));
     },
     (Object error, StackTrace stack) {
@@ -53,10 +51,8 @@ void main() async {
 
 class PathPlanner extends StatefulWidget {
   final String appVersion;
-  final bool appStoreBuild;
 
-  const PathPlanner(
-      {required this.appVersion, required this.appStoreBuild, super.key});
+  const PathPlanner({required this.appVersion, super.key});
 
   @override
   State<PathPlanner> createState() => _PathPlannerState();
@@ -65,6 +61,7 @@ class PathPlanner extends StatefulWidget {
 class _PathPlannerState extends State<PathPlanner> {
   SharedPreferences? _prefs;
   late Color _teamColor;
+  final bool _sandboxed = false;
 
   @override
   void initState() {
@@ -91,7 +88,7 @@ class _PathPlannerState extends State<PathPlanner> {
       ),
       home: HomePage(
         appVersion: widget.appVersion,
-        appStoreBuild: widget.appStoreBuild,
+        appStoreBuild: _sandboxed,
         prefs: _prefs!,
         onTeamColorChanged: (Color color) {
           setState(() {
