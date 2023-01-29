@@ -67,7 +67,7 @@ public:
 			frc2::PIDController yController, frc::PIDController thetaController,
 			std::function<void(frc::ChassisSpeeds)> output,
 			std::initializer_list<frc2::Subsystem*> requirements,
-			bool useAllianceColor = true);
+			bool useAllianceColor = false);
 
 	/**
 	 * Constructs a new PPMecanumControllerCommand that when executed will follow
@@ -98,7 +98,7 @@ public:
 			frc2::PIDController yController, frc::PIDController thetaController,
 			std::function<void(frc::ChassisSpeeds)> output,
 			std::span<frc2::Subsystem* const > requirements = { },
-			bool useAllianceColor = true);
+			bool useAllianceColor = false);
 
 	/**
 	 * Constructs a new PPMecanumControllerCommand that when executed will follow
@@ -134,7 +134,7 @@ public:
 			units::meters_per_second_t maxWheelVelocity,
 			std::function<void(frc::MecanumDriveWheelSpeeds)> output,
 			std::initializer_list<frc2::Subsystem*> requirements,
-			bool useAllianceColor = true);
+			bool useAllianceColor = false);
 
 	/**
 	 * Constructs a new PPMecanumControllerCommand that when executed will follow
@@ -170,7 +170,7 @@ public:
 			units::meters_per_second_t maxWheelVelocity,
 			std::function<void(frc::MecanumDriveWheelSpeeds)> output,
 			std::span<frc2::Subsystem* const > requirements = { },
-			bool useAllianceColor = true);
+			bool useAllianceColor = false);
 
 	void Initialize() override;
 
@@ -179,6 +179,17 @@ public:
 	void End(bool interrupted) override;
 
 	bool IsFinished() override;
+
+	static void setLoggingCallbacks(
+			std::function<void(PathPlannerTrajectory)> logActiveTrajectory,
+			std::function<void(frc::Pose2d)> logTargetPose,
+			std::function<void(frc::ChassisSpeeds)> logSetpoint,
+			std::function<void(frc::Translation2d, frc::Rotation2d)> logError) {
+		PPMecanumControllerCommand::logActiveTrajectory = logActiveTrajectory;
+		PPMecanumControllerCommand::logTargetPose = logTargetPose;
+		PPMecanumControllerCommand::logSetpoint = logSetpoint;
+		PPMecanumControllerCommand::logError = logError;
+	}
 
 private:
 	PathPlannerTrajectory m_trajectory;
@@ -192,10 +203,13 @@ private:
 
 	frc::Timer m_timer;
 
-	frc::Field2d m_field;
-
 	bool m_useAllianceColor;
 
 	PathPlannerTrajectory m_transformedTrajectory;
+
+	static std::function<void(PathPlannerTrajectory)> logActiveTrajectory;
+	static std::function<void(frc::Pose2d)> logTargetPose;
+	static std::function<void(frc::ChassisSpeeds)> logSetpoint;
+	static std::function<void(frc::Translation2d, frc::Rotation2d)> logError;
 };
 }

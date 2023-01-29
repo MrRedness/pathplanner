@@ -83,7 +83,7 @@ public:
 			frc2::PIDController rightController,
 			std::function<void(units::volt_t, units::volt_t)> output,
 			std::initializer_list<frc2::Subsystem*> requirements,
-			bool useAllianceColor = true);
+			bool useAllianceColor = false);
 
 	/**
 	 * Constructs a new RamseteCommand that, when executed, will follow the
@@ -125,7 +125,7 @@ public:
 			frc2::PIDController rightController,
 			std::function<void(units::volt_t, units::volt_t)> output,
 			std::span<frc2::Subsystem* const > requirements = { },
-			bool useAllianceColor = true);
+			bool useAllianceColor = false);
 
 	/**
 	 * Constructs a new RamseteCommand that, when executed, will follow the
@@ -153,7 +153,7 @@ public:
 			std::function<
 					void(units::meters_per_second_t, units::meters_per_second_t)> output,
 			std::initializer_list<frc2::Subsystem*> requirements,
-			bool useAllianceColor = true);
+			bool useAllianceColor = false);
 
 	/**
 	 * Constructs a new RamseteCommand that, when executed, will follow the
@@ -181,7 +181,7 @@ public:
 			std::function<
 					void(units::meters_per_second_t, units::meters_per_second_t)> output,
 			std::span<frc2::Subsystem* const > requirements = { },
-			bool useAllianceColor = true);
+			bool useAllianceColor = false);
 
 	void Initialize() override;
 
@@ -190,6 +190,17 @@ public:
 	void End(bool interrupted) override;
 
 	bool IsFinished() override;
+
+	static void setLoggingCallbacks(
+			std::function<void(PathPlannerTrajectory)> logActiveTrajectory,
+			std::function<void(frc::Pose2d)> logTargetPose,
+			std::function<void(frc::ChassisSpeeds)> logSetpoint,
+			std::function<void(frc::Translation2d, frc::Rotation2d)> logError) {
+		PPRamseteCommand::logActiveTrajectory = logActiveTrajectory;
+		PPRamseteCommand::logTargetPose = logTargetPose;
+		PPRamseteCommand::logSetpoint = logSetpoint;
+		PPRamseteCommand::logError = logError;
+	}
 
 private:
 	PathPlannerTrajectory m_trajectory;
@@ -208,9 +219,13 @@ private:
 	frc::DifferentialDriveWheelSpeeds m_prevSpeeds;
 	bool m_usePID;
 
-	frc::Field2d m_field;
 	bool m_useAllianceColor;
 
 	PathPlannerTrajectory m_transformedTrajectory;
+
+	static std::function<void(PathPlannerTrajectory)> logActiveTrajectory;
+	static std::function<void(frc::Pose2d)> logTargetPose;
+	static std::function<void(frc::ChassisSpeeds)> logSetpoint;
+	static std::function<void(frc::Translation2d, frc::Rotation2d)> logError;
 };
 }
