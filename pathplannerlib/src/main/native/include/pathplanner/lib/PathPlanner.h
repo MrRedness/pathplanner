@@ -96,8 +96,10 @@ public:
 	 * @param points Points in the path
 	 * @return The generated path
 	 */
-	static PathPlannerTrajectory generatePath(PathConstraints const constraints,
-			bool const reversed, std::vector<PathPoint> const points);
+	static PathPlannerTrajectory generatePath(
+			PathConstraints const constraints,
+			bool const reversed, 
+			std::vector<PathPoint> const &points);
 
 	/**
 	 * @brief Generate a path on-the-fly from a list of points
@@ -115,7 +117,8 @@ public:
 	static PathPlannerTrajectory generatePath(
 			units::meters_per_second_t const maxVel,
 			units::meters_per_second_squared_t const maxAccel,
-			bool const reversed, std::vector<PathPoint> const points) {
+			bool const reversed, 
+			std::vector<PathPoint> const &points) {
 		return generatePath(PathConstraints { maxVel, maxAccel }, reversed,
 				points);
 	}
@@ -131,8 +134,9 @@ public:
 	 * @param points Points in the path
 	 * @return The generated path
 	 */
-	static PathPlannerTrajectory generatePath(PathConstraints const constraints,
-			std::vector<PathPoint> const points) {
+	static PathPlannerTrajectory generatePath(
+			PathConstraints const constraints,
+			std::vector<PathPoint> const &points) {
 		return generatePath(constraints, false, points);
 	}
 
@@ -151,7 +155,7 @@ public:
 	static PathPlannerTrajectory generatePath(
 			units::meters_per_second_t const maxVel,
 			units::meters_per_second_squared_t const maxAccel,
-			std::vector<PathPoint> const points) {
+			std::vector<PathPoint> const &points) {
 		return generatePath(PathConstraints { maxVel, maxAccel }, points);
 	}
 

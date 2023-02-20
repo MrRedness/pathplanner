@@ -242,7 +242,8 @@ void PathPlannerTrajectory::calculateMaxVel(
 }
 
 void PathPlannerTrajectory::calculateVelocity(
-		std::vector<PathPlannerState> &states, std::vector<Waypoint> pathPoints,
+		std::vector<PathPlannerState> &states,
+		 std::vector<Waypoint> const &pathPoints,
 		units::meters_per_second_squared_t const maxAccel) {
 	if (pathPoints[0].velocityOverride == -1_mps) {
 		states[0].velocity = 0_mps;

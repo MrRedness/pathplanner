@@ -100,7 +100,7 @@ public:
 		WaitBehavior waitBehavior;
 		units::second_t waitTime;
 
-		StopEvent(std::vector<std::string> names,
+		StopEvent(std::vector<std::string> &&names,
 				ExecutionBehavior executionBehavior, WaitBehavior waitBehavior,
 				units::second_t waitTime) {
 			this->names = names;
@@ -173,7 +173,7 @@ private:
 			units::meters_per_second_squared_t const maxAccel,
 			bool const reversed);
 	static void calculateVelocity(std::vector<PathPlannerState> &states,
-			std::vector<Waypoint> pathPoints,
+			std::vector<Waypoint> const &pathPoints,
 			units::meters_per_second_squared_t const maxAccel);
 	static void recalculateValues(std::vector<PathPlannerState> &states,
 			bool const reversed);
